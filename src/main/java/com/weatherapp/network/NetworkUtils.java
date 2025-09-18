@@ -6,35 +6,34 @@ import com.weatherapp.model.WeatherResponse;
 
 import java.io.*;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 
 public class NetworkUtils {
     private static final Gson gson = new Gson();
 
     public static void sendRequest(Socket socket, WeatherRequest request) throws IOException {
-        try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
-            String jsonRequest = gson.toJson(request);
-            out.println(jsonRequest);
-        }
+        PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
+        String jsonRequest = gson.toJson(request);
+        out.println(jsonRequest);
+        out.flush();
     }
 
     public static WeatherResponse receiveResponse(Socket socket) throws IOException {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-            String jsonResponse = in.readLine();
-            return gson.fromJson(jsonResponse, WeatherResponse.class);
-        }
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+        String jsonResponse = in.readLine();
+        return gson.fromJson(jsonResponse, WeatherResponse.class);
     }
 
     public static WeatherRequest receiveRequest(Socket socket) throws IOException {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-            String jsonRequest = in.readLine();
-            return gson.fromJson(jsonRequest, WeatherRequest.class);
-        }
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+        String jsonRequest = in.readLine();
+        return gson.fromJson(jsonRequest, WeatherRequest.class);
     }
 
     public static void sendResponse(Socket socket, WeatherResponse response) throws IOException {
-        try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
-            String jsonResponse = gson.toJson(response);
-            out.println(jsonResponse);
-        }
+        PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
+        String jsonResponse = gson.toJson(response);
+        out.println(jsonResponse);
+        out.flush();
     }
 }
