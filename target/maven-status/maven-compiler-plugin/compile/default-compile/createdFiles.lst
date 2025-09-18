@@ -1,0 +1,10 @@
+com\weatherapp\model\WeatherResponse.class
+com\weatherapp\model\WeatherRequest$RequestType.class
+com\weatherapp\network\NetworkUtils.class
+com\weatherapp\ui\WeatherAppGUI.class
+com\weatherapp\server\WeatherServer.class
+com\weatherapp\model\WeatherData.class
+com\weatherapp\client\WeatherClient.class
+com\weatherapp\model\WeatherRequest.class
+com\weatherapp\service\WeatherService.class
+com\weatherapp\model\WeatherResponse$ResponseStatus.class
