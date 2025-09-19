@@ -15,6 +15,8 @@ public class WeatherAppGUI extends JFrame {
     private final JTextField cityField;
     private final JTextArea weatherDisplay;
     private final JButton searchButton;
+    private final JLabel statusLabel;
+    private final JProgressBar progressBar;
 
     public WeatherAppGUI() {
         client = new WeatherClient("localhost", 8080);
@@ -22,30 +24,55 @@ public class WeatherAppGUI extends JFrame {
         // Set up the frame
         setTitle("Weather Forecast App");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(500, 300);
+        setSize(600, 380);
         setLocationRelativeTo(null);
 
+        // Look & Feel
+        try {
+            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
+                if ("Nimbus".equals(info.getName())) {
+                    UIManager.setLookAndFeel(info.getClassName());
+                    break;
+                }
+            }
+        } catch (Exception ignored) {}
+
         // Create components
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        JPanel mainPanel = new JPanel(new BorderLayout(12, 12));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         // Search panel (North)
-        JPanel searchPanel = new JPanel(new BorderLayout(5, 0));
+        JPanel searchPanel = new JPanel(new BorderLayout(8, 0));
         cityField = new JTextField();
+        cityField.setToolTipText("Enter a city name (e.g., Hanoi, Tokyo)");
         searchButton = new JButton("Get Weather");
-        searchPanel.add(new JLabel("City: "), BorderLayout.WEST);
+        JLabel cityLabel = new JLabel("City: ");
+        cityLabel.setFont(cityLabel.getFont().deriveFont(Font.BOLD));
+        searchPanel.add(cityLabel, BorderLayout.WEST);
         searchPanel.add(cityField, BorderLayout.CENTER);
         searchPanel.add(searchButton, BorderLayout.EAST);
 
         // Weather display (Center)
         weatherDisplay = new JTextArea();
         weatherDisplay.setEditable(false);
-        weatherDisplay.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        weatherDisplay.setFont(new Font("Monospaced", Font.PLAIN, 15));
+        weatherDisplay.setLineWrap(true);
+        weatherDisplay.setWrapStyleWord(true);
         JScrollPane scrollPane = new JScrollPane(weatherDisplay);
+
+        // Status bar (South)
+        JPanel statusPanel = new JPanel(new BorderLayout(8, 0));
+        statusLabel = new JLabel("Ready");
+        progressBar = new JProgressBar();
+        progressBar.setIndeterminate(false);
+        progressBar.setVisible(false);
+        statusPanel.add(statusLabel, BorderLayout.WEST);
+        statusPanel.add(progressBar, BorderLayout.EAST);
 
         // Add components to main panel
         mainPanel.add(searchPanel, BorderLayout.NORTH);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
+        mainPanel.add(statusPanel, BorderLayout.SOUTH);
 
         // Add main panel to frame
         add(mainPanel);
@@ -66,41 +93,61 @@ public class WeatherAppGUI extends JFrame {
                 JOptionPane.ERROR_MESSAGE);
             return;
         }
+        setLoading(true, "Fetching weather for " + city + "...");
 
-        try {
-            setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-            searchButton.setEnabled(false);
-            
-            WeatherResponse response = client.getWeatherData(city);
-            
-            if (response.getStatus() == WeatherResponse.ResponseStatus.SUCCESS) {
-                WeatherData data = response.getWeatherData();
-                weatherDisplay.setText(formatWeatherData(data));
-            } else {
-                weatherDisplay.setText("Error: " + response.getMessage());
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            private WeatherResponse response;
+            private IOException error;
+
+            @Override
+            protected Void doInBackground() {
+                try {
+                    response = client.getWeatherData(city);
+                } catch (IOException ex) {
+                    error = ex;
+                }
+                return null;
             }
-            
-        } catch (IOException ex) {
-            JOptionPane.showMessageDialog(this,
-                "Error connecting to server: " + ex.getMessage(),
-                "Connection Error",
-                JOptionPane.ERROR_MESSAGE);
-            weatherDisplay.setText("Failed to get weather data. Please try again.");
-        } finally {
-            setCursor(Cursor.getDefaultCursor());
-            searchButton.setEnabled(true);
-        }
+
+            @Override
+            protected void done() {
+                setLoading(false, error == null ? "Done" : "Error");
+                if (error != null) {
+                    JOptionPane.showMessageDialog(WeatherAppGUI.this,
+                        "Error connecting to server: " + error.getMessage(),
+                        "Connection Error",
+                        JOptionPane.ERROR_MESSAGE);
+                    weatherDisplay.setText("Failed to get weather data. Please try again.");
+                    return;
+                }
+
+                if (response.getStatus() == WeatherResponse.ResponseStatus.SUCCESS) {
+                    WeatherData data = response.getWeatherData();
+                    weatherDisplay.setText(formatWeatherData(data));
+                } else {
+                    weatherDisplay.setText("Error: " + response.getMessage());
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void setLoading(boolean loading, String message) {
+        setCursor(loading ? Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR) : Cursor.getDefaultCursor());
+        searchButton.setEnabled(!loading);
+        progressBar.setVisible(loading);
+        progressBar.setIndeterminate(loading);
+        statusLabel.setText(message);
     }
 
     private String formatWeatherData(WeatherData data) {
-        return String.format("""
-            Weather Information for %s
-            -------------------------
-            Temperature: %.1f°C
-            Humidity: %.1f%%
-            Conditions: %s
-            Wind Speed: %.1f km/h
-            """,
+        return String.format(
+            "Weather for %s\n" +
+            "=============================\n" +
+            "Temperature      : %.1f °C\n" +
+            "Humidity         : %.1f %%\n" +
+            "Conditions       : %s\n" +
+            "Wind Speed       : %.1f km/h\n",
             data.getCityName(),
             data.getTemperature(),
             data.getHumidity(),
