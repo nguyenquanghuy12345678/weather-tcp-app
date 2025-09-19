@@ -1,32 +1,13 @@
 package com.weatherapp.model;
 
 public class WeatherRequest {
-    private String cityName;
-    private RequestType type;
+    private final String city;
 
-    public WeatherRequest(String cityName, RequestType type) {
-        this.cityName = cityName;
-        this.type = type;
+    public WeatherRequest(String city) {
+        this.city = city;
     }
 
     public String getCityName() {
-        return cityName;
-    }
-
-    public void setCityName(String cityName) {
-        this.cityName = cityName;
-    }
-
-    public RequestType getType() {
-        return type;
-    }
-
-    public void setType(RequestType type) {
-        this.type = type;
-    }
-
-    public enum RequestType {
-        CURRENT_WEATHER,
-        FORECAST
+        return city;
     }
 }

@@ -1,176 +1,166 @@
 package com.weatherapp.service;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.weatherapp.model.WeatherData;
+import com.weatherapp.model.WeatherResponse;
 
-import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.URLEncoder;
 
 public class WeatherService {
-    private static final String GEOCODING_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
-    private static final String FORECAST_ENDPOINT = "https://api.open-meteo.com/v1/forecast";
+	private static final String API_ENV = "OPENWEATHERMAP_API_KEY";
+	private static final String OWM_BASE = "https://api.openweathermap.org/data/2.5/weather";
+	private static final String WTTR_BASE = "https://wttr.in";
 
-    private static final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+	public WeatherResponse getWeather(String city) {
+		WeatherResponse resp = new WeatherResponse();
+		if (city == null || city.isBlank()) {
+			resp.setStatus(WeatherResponse.ResponseStatus.ERROR);
+			resp.setError("empty-city");
+			return resp;
+		}
+		String apiKey = System.getenv(API_ENV);
+		try {
+			if (apiKey != null && !apiKey.isBlank()) {
+				// Use OpenWeatherMap
+				String url = String.format("%s?q=%s&units=metric&appid=%s", OWM_BASE, encode(city), apiKey);
+				HttpClient client = HttpClient.newHttpClient();
+				HttpRequest req = HttpRequest.newBuilder()
+						.uri(URI.create(url))
+						.GET()
+						.build();
+				HttpResponse<String> r = client.send(req, HttpResponse.BodyHandlers.ofString());
+				String body = r.body();
+				resp.setRawJson(body);
+				if (r.statusCode() != 200) {
+					// Fall through to wttr.in fallback if OWM failed (optional)
+					// try wttr.in below
+				} else {
+					JsonElement je = JsonParser.parseString(body);
+					if (je.isJsonObject()) {
+						JsonObject jo = je.getAsJsonObject();
+						WeatherData wd = new WeatherData();
+						wd.setLocationName(jo.has("name") ? jo.get("name").getAsString() : city);
+						if (jo.has("weather")) {
+							JsonArray arr = jo.getAsJsonArray("weather");
+							if (arr.size() > 0) {
+								JsonObject w0 = arr.get(0).getAsJsonObject();
+								wd.setDescription(w0.has("description") ? w0.get("description").getAsString() : "");
+							}
+						}
+						if (jo.has("main")) {
+							JsonObject main = jo.getAsJsonObject("main");
+							if (main.has("temp")) wd.setTemperature(main.get("temp").getAsDouble());
+							if (main.has("humidity")) wd.setHumidity(main.get("humidity").getAsInt());
+						}
+						if (jo.has("wind")) {
+							JsonObject wind = jo.getAsJsonObject("wind");
+							if (wind.has("speed")) wd.setWindSpeed(wind.get("speed").getAsDouble());
+						}
+						resp.setData(wd);
+						resp.setStatus(WeatherResponse.ResponseStatus.SUCCESS);
+						return resp;
+					}
+				}
+			}
+			// Fallback: use wttr.in (no API key required)
+			// wttr.in JSON: https://wttr.in/{city}?format=j1
+			String wttrUrl = String.format("%s/%s?format=j1", WTTR_BASE, encode(city));
+			HttpClient client2 = HttpClient.newHttpClient();
+			HttpRequest req2 = HttpRequest.newBuilder()
+					.uri(URI.create(wttrUrl))
+					.header("User-Agent", "WeatherApp/1.0")
+					.GET()
+					.build();
+			HttpResponse<String> r2 = client2.send(req2, HttpResponse.BodyHandlers.ofString());
+			String body2 = r2.body();
+			resp.setRawJson(body2);
+			if (r2.statusCode() != 200) {
+				resp.setStatus(WeatherResponse.ResponseStatus.ERROR);
+				resp.setError("wttr-error: HTTP " + r2.statusCode());
+				return resp;
+			}
+			JsonElement je2 = JsonParser.parseString(body2);
+			if (je2.isJsonObject()) {
+				JsonObject jo = je2.getAsJsonObject();
+				WeatherData wd = new WeatherData();
+				// try to extract current_condition
+				if (jo.has("current_condition")) {
+					JsonArray cc = jo.getAsJsonArray("current_condition");
+					if (cc.size() > 0) {
+						JsonObject cur = cc.get(0).getAsJsonObject();
+						// description
+						try {
+							if (cur.has("weatherDesc") && cur.getAsJsonArray("weatherDesc").size() > 0) {
+								JsonObject d0 = cur.getAsJsonArray("weatherDesc").get(0).getAsJsonObject();
+								wd.setDescription(d0.has("value") ? d0.get("value").getAsString() : "");
+							}
+						} catch (Exception ignored) {}
+						// temp (C)
+						if (cur.has("temp_C")) {
+							try { wd.setTemperature(Double.parseDouble(cur.get("temp_C").getAsString())); } catch (Exception ignored) {}
+						}
+						// humidity
+						if (cur.has("humidity")) {
+							try { wd.setHumidity(Integer.parseInt(cur.get("humidity").getAsString())); } catch (Exception ignored) {}
+						}
+						// wind speed (kmph) -> convert to m/s
+						if (cur.has("windspeedKmph")) {
+							try {
+								double kmph = Double.parseDouble(cur.get("windspeedKmph").getAsString());
+								wd.setWindSpeed(kmph / 3.6);
+							} catch (Exception ignored) {}
+						}
+					}
+				}
+				// location: prefer nearest_area -> areaName[0].value
+				try {
+					if (jo.has("nearest_area")) {
+						JsonArray na = jo.getAsJsonArray("nearest_area");
+						if (na.size() > 0) {
+							JsonObject a0 = na.get(0).getAsJsonObject();
+							if (a0.has("areaName") && a0.getAsJsonArray("areaName").size() > 0) {
+								JsonObject an = a0.getAsJsonArray("areaName").get(0).getAsJsonObject();
+								wd.setLocationName(an.has("value") ? an.get("value").getAsString() : city);
+							} else {
+								wd.setLocationName(city);
+							}
+						} else {
+							wd.setLocationName(city);
+						}
+					} else {
+						wd.setLocationName(city);
+					}
+				} catch (Exception ignored) {
+					wd.setLocationName(city);
+				}
+				resp.setData(wd);
+				resp.setStatus(WeatherResponse.ResponseStatus.SUCCESS);
+				return resp;
+			} else {
+				resp.setStatus(WeatherResponse.ResponseStatus.ERROR);
+				resp.setError("invalid-wttr-response");
+				return resp;
+			}
+		} catch (Exception e) {
+			resp.setStatus(WeatherResponse.ResponseStatus.ERROR);
+			resp.setError(e.getMessage());
+			return resp;
+		}
+	}
 
-    private static final Gson gson = new Gson();
-
-    public WeatherService() {
-    }
-
-    public WeatherData getWeatherData(String cityName) throws IOException {
-        Coordinates coordinates = geocodeCity(cityName);
-        if (coordinates == null) {
-            throw new IOException("City not found: " + cityName);
-        }
-
-        JsonObject current = fetchCurrentWeather(coordinates.latitude, coordinates.longitude);
-        if (current == null) {
-            throw new IOException("Failed to fetch weather for: " + cityName);
-        }
-
-        double temperature = getAsDoubleOrNaN(current, "temperature_2m");
-        double humidity = getAsDoubleOrNaN(current, "relative_humidity_2m");
-        double windSpeed = getAsDoubleOrNaN(current, "wind_speed_10m");
-        int weatherCode = getAsIntOrDefault(current, "weather_code", -1);
-
-        String description = describeWeatherCode(weatherCode);
-
-        WeatherData data = new WeatherData();
-        data.setCityName(cityName);
-        data.setTemperature(temperature);
-        data.setHumidity(humidity);
-        data.setWindSpeed(windSpeed);
-        data.setDescription(description);
-        return data;
-    }
-
-    private Coordinates geocodeCity(String cityName) throws IOException {
-        String nameParam = URLEncoder.encode(cityName, StandardCharsets.UTF_8);
-        String url = GEOCODING_ENDPOINT + "?name=" + nameParam + "&count=1";
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build();
-
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                throw new IOException("Geocoding failed: HTTP " + response.statusCode());
-            }
-            JsonObject root = gson.fromJson(response.body(), JsonObject.class);
-            JsonArray results = root.has("results") && root.get("results").isJsonArray() ? root.getAsJsonArray("results") : null;
-            if (results == null || results.size() == 0) {
-                return null;
-            }
-            JsonObject first = results.get(0).getAsJsonObject();
-            double lat = first.get("latitude").getAsDouble();
-            double lon = first.get("longitude").getAsDouble();
-            return new Coordinates(lat, lon);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Geocoding interrupted", e);
-        }
-    }
-
-    private JsonObject fetchCurrentWeather(double latitude, double longitude) throws IOException {
-        String url = FORECAST_ENDPOINT + "?latitude=" + latitude + "&longitude=" + longitude
-                + "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m";
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build();
-
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                throw new IOException("Forecast failed: HTTP " + response.statusCode());
-            }
-            JsonObject root = gson.fromJson(response.body(), JsonObject.class);
-            if (root.has("current") && root.get("current").isJsonObject()) {
-                return root.getAsJsonObject("current");
-            }
-            return null;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Forecast interrupted", e);
-        }
-    }
-
-    private static int getAsIntOrDefault(JsonObject obj, String member, int fallback) {
-        try {
-            JsonElement el = obj.get(member);
-            return el != null ? el.getAsInt() : fallback;
-        } catch (Exception e) {
-            return fallback;
-        }
-    }
-
-    private static double getAsDoubleOrNaN(JsonObject obj, String member) {
-        try {
-            JsonElement el = obj.get(member);
-            return el != null ? el.getAsDouble() : Double.NaN;
-        } catch (Exception e) {
-            return Double.NaN;
-        }
-    }
-
-    private static String describeWeatherCode(int code) {
-        Map<Integer, String> map = new HashMap<>();
-        map.put(0, "Clear sky");
-        map.put(1, "Mainly clear");
-        map.put(2, "Partly cloudy");
-        map.put(3, "Overcast");
-        map.put(45, "Fog");
-        map.put(48, "Depositing rime fog");
-        map.put(51, "Light drizzle");
-        map.put(53, "Moderate drizzle");
-        map.put(55, "Dense drizzle");
-        map.put(56, "Light freezing drizzle");
-        map.put(57, "Dense freezing drizzle");
-        map.put(61, "Slight rain");
-        map.put(63, "Moderate rain");
-        map.put(65, "Heavy rain");
-        map.put(66, "Light freezing rain");
-        map.put(67, "Heavy freezing rain");
-        map.put(71, "Slight snow fall");
-        map.put(73, "Moderate snow fall");
-        map.put(75, "Heavy snow fall");
-        map.put(77, "Snow grains");
-        map.put(80, "Slight rain showers");
-        map.put(81, "Moderate rain showers");
-        map.put(82, "Violent rain showers");
-        map.put(85, "Slight snow showers");
-        map.put(86, "Heavy snow showers");
-        map.put(95, "Thunderstorm");
-        map.put(96, "Thunderstorm with slight hail");
-        map.put(99, "Thunderstorm with heavy hail");
-        return map.getOrDefault(code, "Unknown");
-    }
-
-    private static class Coordinates {
-        final double latitude;
-        final double longitude;
-
-        Coordinates(double latitude, double longitude) {
-            this.latitude = latitude;
-            this.longitude = longitude;
-        }
-    }
+	private static String encode(String s) {
+		try {
+			return URLEncoder.encode(s, StandardCharsets.UTF_8);
+		} catch (Exception e) {
+			return s.replace(" ", "%20");
+		}
+	}
 }

@@ -36,4 +36,19 @@ public class NetworkUtils {
         out.println(jsonResponse);
         out.flush();
     }
+
+    public static String convertToJson(WeatherResponse resp) {
+        return gson.toJson(resp);
+    }
+
+    public static WeatherResponse parseFromJson(String json) {
+        try {
+            return gson.fromJson(json, WeatherResponse.class);
+        } catch (Exception e) {
+            WeatherResponse wr = new WeatherResponse();
+            wr.setStatus(WeatherResponse.ResponseStatus.ERROR);
+            wr.setError("invalid-json: " + e.getMessage());
+            return wr;
+        }
+    }
 }
