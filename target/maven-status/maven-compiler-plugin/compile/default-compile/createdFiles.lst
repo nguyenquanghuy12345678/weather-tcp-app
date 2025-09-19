@@ -8,3 +8,4 @@ com\weatherapp\client\WeatherClient.class
 com\weatherapp\model\WeatherRequest.class
 com\weatherapp\service\WeatherService.class
 com\weatherapp\model\WeatherResponse$ResponseStatus.class
+com\weatherapp\service\WeatherService$Coordinates.class
