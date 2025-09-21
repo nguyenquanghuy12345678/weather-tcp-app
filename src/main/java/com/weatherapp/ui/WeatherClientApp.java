@@ -14,14 +14,21 @@ public class WeatherClientApp {
 	private final ObjectMapper mapper = new ObjectMapper();
 
 	public static void main(String[] args) {
+		// try to set FlatLaf if available
+		try {
+			UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatLightLaf());
+		} catch (Exception ignored) {}
 		SwingUtilities.invokeLater(() -> new WeatherClientApp().createAndShow());
 	}
 
 	private void createAndShow() {
 		JFrame frame = new JFrame("Weather TCP Client");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.setSize(480, 320);
-		JPanel panel = new JPanel(new BorderLayout(8, 8));
+		frame.setSize(520, 380);
+
+		JPanel root = new JPanel(new BorderLayout(10,10));
+		root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+
 		JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
 		JTextField cityField = new JTextField(20);
 		cityField.setText("Hanoi");
@@ -29,46 +36,67 @@ public class WeatherClientApp {
 		top.add(new JLabel("City:"));
 		top.add(cityField);
 		top.add(btn);
-		JTextArea outArea = new JTextArea();
-		outArea.setEditable(false);
-		outArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-		panel.add(top, BorderLayout.NORTH);
-		panel.add(new JScrollPane(outArea), BorderLayout.CENTER);
-		frame.setContentPane(panel);
+
+		// card panel to show icon + details
+		JPanel card = new JPanel(new BorderLayout(8,8));
+		card.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY), BorderFactory.createEmptyBorder(8,8,8,8)));
+		JLabel icon = new JLabel();
+		icon.setPreferredSize(new Dimension(120,120));
+		JPanel info = new JPanel(new GridLayout(0,1));
+		JLabel lblLocation = new JLabel("Location: -");
+		JLabel lblDesc = new JLabel("Description: -");
+		JLabel lblTemp = new JLabel("Temperature: -");
+		JLabel lblHum = new JLabel("Humidity: -");
+		JLabel lblWind = new JLabel("Wind: -");
+		info.add(lblLocation); info.add(lblDesc); info.add(lblTemp); info.add(lblHum); info.add(lblWind);
+		card.add(icon, BorderLayout.WEST);
+		card.add(info, BorderLayout.CENTER);
+
+		root.add(top, BorderLayout.NORTH);
+		root.add(card, BorderLayout.CENTER);
+
+		frame.setContentPane(root);
+
 		btn.addActionListener((ActionEvent e) -> {
 			String city = cityField.getText().trim();
 			if (city.isEmpty()) return;
 			btn.setEnabled(false);
-			outArea.setText("Loading...");
+			lblLocation.setText("Loading...");
 			new Thread(() -> {
 				try {
 					String json = WeatherClient.request(SERVER_HOST, SERVER_PORT, city);
-					JsonNode root = mapper.readTree(json);
-					if (root.has("error")) {
-						outArea.setText("Error: " + root.get("error").asText());
+					JsonNode rootN = mapper.readTree(json);
+					if (rootN.has("error")) {
+						SwingUtilities.invokeLater(() -> lblLocation.setText("Error: " + rootN.get("error").asText()));
 					} else {
-						String name = root.path("name").asText();
-						String desc = root.path("weather").isArray() && root.path("weather").size() > 0
-								? root.path("weather").get(0).path("description").asText()
+						String name = rootN.path("name").asText();
+						String desc = rootN.path("weather").isArray() && rootN.path("weather").size() > 0
+								? rootN.path("weather").get(0).path("description").asText()
 								: "N/A";
-						double temp = root.path("main").path("temp").asDouble(Double.NaN);
-						int humidity = root.path("main").path("humidity").asInt(-1);
-						double wind = root.path("wind").path("speed").asDouble(Double.NaN);
-						StringBuilder sb = new StringBuilder();
-						sb.append(String.format("Location: %s%n", name));
-						sb.append(String.format("Description: %s%n", desc));
-						sb.append(String.format("Temperature: %.1f °C%n", temp));
-						sb.append(String.format("Humidity: %d %% %n", humidity));
-						sb.append(String.format("Wind speed: %.1f m/s%n", wind));
-						outArea.setText(sb.toString());
+						double temp = rootN.path("main").path("temp").asDouble(Double.NaN);
+						int humidity = rootN.path("main").path("humidity").asInt(-1);
+						double wind = rootN.path("wind").path("speed").asDouble(Double.NaN);
+						String iconCode = rootN.path("weather").isArray() && rootN.path("weather").size() > 0
+								? rootN.path("weather").get(0).path("icon").asText()
+								: null;
+						ImageIcon ic = WeatherIconCache.getIcon(iconCode);
+						SwingUtilities.invokeLater(() -> {
+							if (ic != null) icon.setIcon(ic);
+							lblLocation.setText("Location: " + name);
+							lblDesc.setText("Description: " + desc);
+							lblTemp.setText(String.format("Temperature: %.1f °C", temp));
+							lblHum.setText("Humidity: " + humidity + " %");
+							lblWind.setText(String.format("Wind: %.1f m/s", wind));
+						});
 					}
 				} catch (Exception ex) {
-					outArea.setText("Request failed: " + ex.getMessage());
+					SwingUtilities.invokeLater(() -> lblLocation.setText("Request failed: " + ex.getMessage()));
 				} finally {
 					SwingUtilities.invokeLater(() -> btn.setEnabled(true));
 				}
 			}).start();
 		});
+
 		frame.setLocationRelativeTo(null);
 		frame.setVisible(true);
 	}

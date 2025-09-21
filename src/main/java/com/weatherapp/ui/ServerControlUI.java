@@ -111,6 +111,9 @@ public class ServerControlUI {
 	}
 
 	public static void main(String[] args) {
+		try {
+			UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatLightLaf());
+		} catch (Exception ignored) {}
 		ServerControlUI ui = new ServerControlUI();
 		ui.show();
 	}

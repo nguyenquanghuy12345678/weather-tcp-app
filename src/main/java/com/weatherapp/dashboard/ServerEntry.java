@@ -12,6 +12,7 @@ public class ServerEntry {
     private final ServerManager manager;
     private int requestedPort;
     private Instant startedAt;
+    private int clientCount = 0;
 
     public ServerEntry(String id, ServerManager manager, int requestedPort) {
         this.id = id;
@@ -45,5 +46,13 @@ public class ServerEntry {
 
     public boolean isRunning() {
         return manager != null && manager.isRunning();
+    }
+
+    public int getClientCount() {
+        return clientCount;
+    }
+
+    public void setClientCount(int clientCount) {
+        this.clientCount = clientCount;
     }
 }
