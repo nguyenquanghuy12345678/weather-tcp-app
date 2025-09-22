@@ -19,9 +19,16 @@ public class DashboardUI {
     private final DefaultTableModel tableModel;
 
     public DashboardUI() {
+        try {
+            UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatLightLaf());
+        } catch (Exception ignored) {}
         frame = new JFrame("Weather Servers Dashboard");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setSize(800, 480);
+        ImageIcon appIcon = IconManager.loadIcon("/icons/weather-forecast.png", 32, 32);
+        if (appIcon != null) {
+            frame.setIconImage(appIcon.getImage());
+        }
 
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         JTextField portField = new JTextField("5555", 6);

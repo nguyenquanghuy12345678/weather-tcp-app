@@ -32,6 +32,9 @@ public class WeatherAppGUI {
     }
 
     private void createAndShow() {
+        try {
+            UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatLightLaf());
+        } catch (Exception ignored) {}
         JFrame frame = new JFrame("Weather TCP Client - Enhanced");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(720, 520);
@@ -50,6 +53,11 @@ public class WeatherAppGUI {
         JSpinner intervalSpinner = new JSpinner(new SpinnerNumberModel(60, 5, 3600, 5)); // seconds
         JButton getBtn = new JButton("Get");
         JButton clearHistoryBtn = new JButton("Clear history");
+
+        ImageIcon appIcon = IconManager.loadIcon("/icons/weather-forecast.png", 32, 32);
+        if (appIcon != null) {
+            frame.setIconImage(appIcon.getImage());
+        }
 
         top.add(new JLabel("Host:"));
         top.add(hostField);
@@ -99,6 +107,9 @@ public class WeatherAppGUI {
         JButton rawBtn = new JButton("Show raw JSON");
         JButton copyBtn = new JButton("Copy to clipboard");
         JButton refreshBtn = new JButton("Refresh");
+
+        ImageIcon refreshIc = IconManager.loadIcon("/icons/weather.png", 18, 18);
+        if (refreshIc != null) refreshBtn.setIcon(refreshIc);
         controlsBelow.add(rawBtn);
         controlsBelow.add(copyBtn);
         controlsBelow.add(refreshBtn);
