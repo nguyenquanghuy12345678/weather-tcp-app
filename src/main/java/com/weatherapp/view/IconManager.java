@@ -43,11 +43,31 @@ public class IconManager {
             if (img == null) return null;
             if (width > 0 && height > 0) {
                 Image scaled = img.getScaledInstance(width, height, Image.SCALE_SMOOTH);
-                return new ImageIcon(scaled);
+                Image withGlow = addGlow(scaled, new Color(255,255,255,60));
+                return new ImageIcon(withGlow);
             }
             return new ImageIcon(img);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static Image addGlow(Image src, Color glow) {
+        int w = src.getWidth(null);
+        int h = src.getHeight(null);
+        if (w <= 0 || h <= 0) return src;
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.drawImage(src, 0, 0, null);
+            g.setComposite(AlphaComposite.SrcOver);
+            g.setColor(glow);
+            g.setStroke(new BasicStroke(2f));
+            g.drawRoundRect(1, 1, w - 2, h - 2, 6, 6);
+        } finally {
+            g.dispose();
+        }
+        return out;
     }
 }

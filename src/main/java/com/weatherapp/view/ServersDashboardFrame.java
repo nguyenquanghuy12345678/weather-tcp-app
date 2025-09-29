@@ -13,12 +13,12 @@ import java.util.Map;
 /**
  * Dashboard UI to manage multiple servers and show simple status.
  */
-public class DashboardUI {
+public class ServersDashboardFrame {
     private final JFrame frame;
     private final ServerAdminController manager = new ServerAdminController();
     private final DefaultTableModel tableModel;
 
-    public DashboardUI() {
+    public ServersDashboardFrame() {
         try {
             UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatLightLaf());
         } catch (Exception ignored) {}
