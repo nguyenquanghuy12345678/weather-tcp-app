@@ -12,6 +12,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /*
   ServerManager: start/stop server programmatically.
@@ -25,6 +26,7 @@ public class ServerManager {
 	private Thread acceptThread;
 	private final ExecutorService workers = Executors.newCachedThreadPool();
 	private volatile boolean running = false;
+    private final CopyOnWriteArrayList<ServerEventListener> listeners = new CopyOnWriteArrayList<>();
 
 	public ServerManager(WeatherService weatherService) {
 		this.weatherService = weatherService;
@@ -38,11 +40,15 @@ public class ServerManager {
 		acceptThread.start();
 	}
 
+    public void addListener(ServerEventListener l) { if (l != null) listeners.addIfAbsent(l); }
+    public void removeListener(ServerEventListener l) { listeners.remove(l); }
+
 	private void acceptLoop() {
 		try (ServerSocket ss = serverSocket) {
 			while (running && !ss.isClosed()) {
 				try {
 					Socket s = ss.accept();
+					for (ServerEventListener l : listeners) l.onClientConnected(getPort(), s.getRemoteSocketAddress());
 					workers.submit(() -> handleClient(s));
 				} catch (Exception e) {
 					if (running) {
@@ -72,12 +78,16 @@ public class ServerManager {
 				out.flush();
 				return;
 			}
-			WeatherResponse resp = weatherService.getWeather(city.trim());
+			String cityTrim = city.trim();
+			for (ServerEventListener l : listeners) l.onRequest(getPort(), cityTrim);
+			WeatherResponse resp = weatherService.getWeather(cityTrim);
 			out.write(NetworkUtils.convertToJson(resp));
 			out.write("\n");
 			out.flush();
 		} catch (Exception e) {
 			System.err.println("Client handler error: " + e.getMessage());
+		} finally {
+			try { for (ServerEventListener l : listeners) l.onClientDisconnected(getPort(), socket.getRemoteSocketAddress()); } catch (Exception ignored) {}
 		}
 	}
 

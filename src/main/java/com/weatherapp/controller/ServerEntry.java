@@ -1,6 +1,9 @@
 package com.weatherapp.controller;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Represents a managed server instance in the dashboard.
@@ -11,6 +14,8 @@ public class ServerEntry {
     private int requestedPort;
     private Instant startedAt;
     private int clientCount = 0;
+    private final List<RequestLogEntry> requestLogs = new ArrayList<>();
+    private final List<ServerUser> users = new ArrayList<>();
 
     public ServerEntry(String id, ServerManager manager, int requestedPort) {
         this.id = id;
@@ -53,4 +58,20 @@ public class ServerEntry {
     public void setClientCount(int clientCount) {
         this.clientCount = clientCount;
     }
+
+    public synchronized void logRequest(String city) {
+        requestLogs.add(new RequestLogEntry(Instant.now(), city));
+        if (requestLogs.size() > 5000) requestLogs.remove(0);
+    }
+
+    public synchronized List<RequestLogEntry> getRequestLogs() {
+        return Collections.unmodifiableList(requestLogs);
+    }
+
+    public synchronized List<ServerUser> getUsers() {
+        return Collections.unmodifiableList(users);
+    }
+
+    public synchronized void addUser(ServerUser user) { if (user != null) users.add(user); }
+    public synchronized void removeUser(String username) { users.removeIf(u -> u.getUsername().equalsIgnoreCase(username)); }
 }
