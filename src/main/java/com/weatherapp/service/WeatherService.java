@@ -16,6 +16,7 @@ import java.net.URLEncoder;
 
 public class WeatherService {
     private static final String OWM_BASE = "https://api.open-meteo.com/v1/forecast";
+    private static final String GEO_BASE = "https://geocoding-api.open-meteo.com/v1/search";
     private static final String WTTR_BASE = "https://wttr.in";
 
     public WeatherResponse getWeather(String city) {
@@ -27,9 +28,10 @@ public class WeatherService {
         }
 
         try {
-            // 1️⃣ Gọi API Open-Meteo geocoding để lấy tọa độ từ tên thành phố
-            String geoUrl = String.format("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1", encode(city));
             HttpClient client = HttpClient.newHttpClient();
+
+            // 1️⃣ Gọi Open-Meteo Geocoding API để lấy lat/lon
+            String geoUrl = String.format("%s?name=%s&count=1", GEO_BASE, encode(city));
             HttpRequest geoReq = HttpRequest.newBuilder()
                     .uri(URI.create(geoUrl))
                     .GET()
@@ -48,9 +50,9 @@ public class WeatherService {
             double lat = loc.get("latitude").getAsDouble();
             double lon = loc.get("longitude").getAsDouble();
 
-            // 2️⃣ Gọi API Open-Meteo chính để lấy thời tiết hiện tại
+            // 2️⃣ Gọi Open-Meteo Weather API: current + hourly humidity + weathercode
             String url = String.format(
-                    "%s?latitude=%f&longitude=%f&current_weather=true",
+                    "%s?latitude=%f&longitude=%f&current_weather=true&hourly=relative_humidity_2m,weathercode",
                     OWM_BASE, lat, lon
             );
 
@@ -68,26 +70,36 @@ public class WeatherService {
             }
 
             JsonElement je = JsonParser.parseString(body);
-            if (je.isJsonObject()) {
-                JsonObject jo = je.getAsJsonObject();
-                if (jo.has("current_weather")) {
-                    JsonObject cw = jo.getAsJsonObject("current_weather");
-                    WeatherData wd = new WeatherData();
-                    wd.setLocationName(city);
-                    wd.setTemperature(cw.has("temperature") ? cw.get("temperature").getAsDouble() : 0);
-                    wd.setWindSpeed(cw.has("windspeed") ? cw.get("windspeed").getAsDouble() : 0);
-                    wd.setDescription("Current weather (Open-Meteo)");
-                    // Độ ẩm không có trong current_weather, có thể lấy từ hourly nếu cần
-                    wd.setHumidity(0);
-
-                    resp.setData(wd);
-                    resp.setStatus(WeatherResponse.ResponseStatus.SUCCESS);
-                    return resp;
-                }
+            if (!je.isJsonObject()) {
+                return wttrFallback(city, resp);
             }
 
-            // fallback nếu JSON không hợp lệ
-            return wttrFallback(city, resp);
+            JsonObject jo = je.getAsJsonObject();
+            if (!jo.has("current_weather")) {
+                return wttrFallback(city, resp);
+            }
+
+            JsonObject cw = jo.getAsJsonObject("current_weather");
+            WeatherData wd = new WeatherData();
+            wd.setLocationName(city);
+            wd.setTemperature(cw.has("temperature") ? cw.get("temperature").getAsDouble() : 0);
+            wd.setWindSpeed(cw.has("windspeed") ? cw.get("windspeed").getAsDouble() : 0);
+
+            // 3️⃣ Lấy weather code và mô tả
+            if (cw.has("weathercode")) {
+                int code = cw.get("weathercode").getAsInt();
+                wd.setDescription(getWeatherDescription(code));
+            } else {
+                wd.setDescription("Unknown");
+            }
+
+            // 4️⃣ Lấy độ ẩm từ hourly.relative_humidity_2m (vị trí tương ứng thời gian hiện tại)
+            double humidity = extractCurrentHumidity(jo, cw);
+            wd.setHumidity((int) humidity);
+
+            resp.setData(wd);
+            resp.setStatus(WeatherResponse.ResponseStatus.SUCCESS);
+            return resp;
 
         } catch (Exception e) {
             resp.setStatus(WeatherResponse.ResponseStatus.ERROR);
@@ -96,6 +108,49 @@ public class WeatherService {
         }
     }
 
+    /** Lấy độ ẩm tương ứng thời gian hiện tại */
+    private double extractCurrentHumidity(JsonObject jo, JsonObject cw) {
+        try {
+            if (!jo.has("hourly")) return 0;
+            JsonObject hourly = jo.getAsJsonObject("hourly");
+            JsonArray timeArr = hourly.getAsJsonArray("time");
+            JsonArray humArr = hourly.getAsJsonArray("relative_humidity_2m");
+            if (timeArr.size() == 0 || humArr.size() == 0) return 0;
+
+            String currentTime = cw.get("time").getAsString();
+            for (int i = 0; i < timeArr.size(); i++) {
+                if (timeArr.get(i).getAsString().equals(currentTime)) {
+                    return humArr.get(i).getAsDouble();
+                }
+            }
+            return humArr.get(humArr.size() - 1).getAsDouble();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** Mô tả thời tiết theo weathercode của Open-Meteo */
+    private String getWeatherDescription(int code) {
+        return switch (code) {
+            case 0 -> "Clear sky";
+            case 1, 2 -> "Mainly clear";
+            case 3 -> "Partly cloudy";
+            case 45, 48 -> "Fog";
+            case 51, 53, 55 -> "Drizzle";
+            case 56, 57 -> "Freezing drizzle";
+            case 61, 63, 65 -> "Rain";
+            case 66, 67 -> "Freezing rain";
+            case 71, 73, 75 -> "Snowfall";
+            case 77 -> "Snow grains";
+            case 80, 81, 82 -> "Rain showers";
+            case 85, 86 -> "Snow showers";
+            case 95 -> "Thunderstorm";
+            case 96, 99 -> "Thunderstorm with hail";
+            default -> "Unknown";
+        };
+    }
+
+    /** Fallback wttr.in */
     private WeatherResponse wttrFallback(String city, WeatherResponse resp) {
         try {
             String wttrUrl = String.format("%s/%s?format=j1", WTTR_BASE, encode(city));
